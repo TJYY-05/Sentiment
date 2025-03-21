@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>响应式网络可视化</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            overflow: hidden;
+            background-color: #fafafa;
+        }
+
+        #visualization-container {
+            flex: 1;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        #search-container {
+            height: 40%;
+            min-height: 60px;
+            width: 100%;
+            border-bottom: 2px solid #36B5B0;
+            padding: 20px;
+            box-sizing: border-box;
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            resize: vertical;
+            overflow: auto;
+        }
+
+        #search-container::-webkit-resizer {
+            background-color: #36B5B0;
+            border-radius: 4px;
+        }
+
+        #search-container.collapsed {
+            height: 60px !important;
+            resize: none;
+        }
+
+        #search-container.collapsed .search-results,
+        #search-container.collapsed .search-stats {
+            display: none;
+        }
+
+        .collapse-control {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            background: #36B5B0;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+            z-index: 100;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid #36B5B0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .search-button {
+            padding: 8px 20px;
+            background-color: #36B5B0;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .search-results {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+
+        .result-item {
+            padding: 10px;
+            margin-bottom: 8px;
+            background-color: white;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .result-item:hover {
+            background-color: #f0f0f0;
+            border-color: #36B5B0;
+        }
+
+        .result-type {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .result-content {
+            font-size: 14px;
+            color: #333;
+        }
+
+        .highlight {
+            background-color: #ffeb3b;
+            padding: 0 2px;
+        }
+
+        .search-stats {
+            margin: 10px 0;
+            font-size: 14px;
+            color: #666;
+        }
+
+        #network-container {
+            flex: 1;
+            width: 100%;
+            position: relative;
+            background-color: white;
+            overflow: hidden;
+        }
+
+        #network {
+            width: 100%;
+            height: 100%;
+        }
+
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .link {
+            stroke: #ccc;
+            stroke-opacity: 0.6;
+            transition: all 0.3s ease;
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            pointer-events: none;
+            font-size: 12px;
+            max-width: 500px; /* 增大最大宽度 */
+            word-wrap: break-word;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            line-height: 1.6;
+            z-index: 1000; /* 确保在最上层 */
+        }
+
+        #filter-panel {
+            width: 300px;
+            height: 100vh;
+            overflow-y: auto;
+            background-color: #f5f5f5;
+            border-left: 1px solid #ddd;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        .filter-section {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 15px;
+        }
+
+        .filter-option {
+            margin: 8px 0;
+        }
+
+        button {
+            padding: 8px 15px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            background-color: #36B5B0;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #0C8F8F;
+        }
+
+        .reset-button {
+            background-color: #5C7148;
+        }
+
+        .reset-button:hover {
+            background-color: #445536;
+        }
+
+        /* 添加情感分析颜色样式 */
+        .sentiment-positive {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .sentiment-neutral {
+            color: #607D8B;
+            font-weight: bold;
+        }
+
+        .sentiment-negative {
+            color: #F44336;
+            font-weight: bold;
+        }
+
+        .sentiment-legend {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 10px;
+            padding: 5px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+
+        .sentiment-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .sentiment-color {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div id="visualization-container">
+        <div id="search-container">
+            <button class="collapse-control">收起/展开</button>
+            <div class="search-box">
+                <input type="text" class="search-input" placeholder="输入关键词搜索(支持多个关键词,空格分隔)">
+                <button class="search-button">搜索</button>
+            </div>
+            <div class="search-stats"></div>
+            <div class="search-results"></div>
+        </div>
+        <div id="network-container">
+            <svg id="network"></svg>
+        </div>
+        <div class="tooltip" style="opacity: 0;"></div>
+    </div>
+
+    <div id="filter-panel">
+        <h2>网络过滤器</h2>
+        <div class="filter-section">
+            <h3>主题筛选</h3>
+            <div class="filter-content">
+                <div class="filter-option">
+                    <input type="checkbox" id="select-all-topics" checked>
+                    <label for="select-all-topics">全选/全不选</label>
+                </div>
+                <div id="topic-filters"></div>
+            </div>
+        </div>
+        
+        <div class="filter-section">
+            <h3>节点类型筛选</h3>
+            <div class="filter-content">
+                <div class="filter-option">
+                    <input type="checkbox" id="node-type-topic" checked>
+                    <label for="node-type-topic">主题节点</label>
+                </div>
+                <div class="filter-option">
+                    <input type="checkbox" id="node-type-text" checked>
+                    <label for="node-type-text">文本节点</label>
+                </div>
+                <div class="filter-option">
+                    <input type="checkbox" id="node-type-reply" checked>
+                    <label for="node-type-reply">回复节点</label>
+                </div>
+                <div class="filter-option">
+                    <input type="checkbox" id="node-type-re_reply" checked>
+                    <label for="node-type-re_reply">再回复节点</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="filter-section">
+            <h3>情感筛选</h3>
+            <div class="filter-content">
+                <div class="filter-option">
+                    <input type="checkbox" id="sentiment-positive" checked>
+                    <label for="sentiment-positive" class="sentiment-positive">积极情感</label>
+                </div>
+                <div class="filter-option">
+                    <input type="checkbox" id="sentiment-neutral" checked>
+                    <label for="sentiment-neutral" class="sentiment-neutral">中性情感</label>
+                </div>
+                <div class="filter-option">
+                    <input type="checkbox" id="sentiment-negative" checked>
+                    <label for="sentiment-negative" class="sentiment-negative">消极情感</label>
+                </div>
+            </div>
+            <div class="sentiment-legend">
+                <div class="sentiment-item">
+                    <span class="sentiment-color" style="background-color: #4CAF50;"></span>
+                    <span>积极</span>
+                </div>
+                <div class="sentiment-item">
+                    <span class="sentiment-color" style="background-color: #607D8B;"></span>
+                    <span>中性</span>
+                </div>
+                <div class="sentiment-item">
+                    <span class="sentiment-color" style="background-color: #F44336;"></span>
+                    <span>消极</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="filter-buttons">
+            <button id="apply-filters">应用过滤</button>
+            <button id="reset-filters" class="reset-button">重置</button>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+let originalData = null;
+let filteredData = null;
+let networkSimulation = null;
+let searchResults = null;
+let selectedNode = null; // 当前选中的节点
+
+// 病毒研究配色方案
+const virusColors = {
+    text: '#36B5B0',
+    reply: '#9DD866',
+    re_reply: '#0C8F8F',
+    topic_main: '#B2E4E9'
+};
+
+// 情感颜色
+const sentimentColors = {
+    positive: '#4CAF50',
+    neutral: '#607D8B',
+    negative: '#F44336'
+};
+
+// 获取DOM元素
+const searchInput = document.querySelector('.search-input');
+const searchButton = document.querySelector('.search-button');
+const searchResultsContainer = document.querySelector('.search-results');
+const searchStats = document.querySelector('.search-stats');
+const networkSvg = d3.select("#network");
+const tooltip = d3.select(".tooltip");
+const collapseButton = document.querySelector('.collapse-control');
+const searchContainer = document.getElementById('search-container');
+
+// 初始化网络图尺寸
+let networkWidth = document.getElementById("network-container").clientWidth;
+let networkHeight = document.getElementById("network-container").clientHeight;
+
+networkSvg
+    .attr("width", "100%")
+    .attr("height", "100%")
+    .attr("viewBox", [0, 0, networkWidth, networkHeight]);
+
+// 搜索区域伸缩控制
+collapseButton.addEventListener('click', () => {
+    searchContainer.classList.toggle('collapsed');
+    updateNetworkSize();
+});
+
+// 更新网络图尺寸
+function updateNetworkSize() {
+    const container = document.getElementById("network-container");
+    networkWidth = container.clientWidth;
+    networkHeight = container.clientHeight;
+    
+    networkSvg
+        .attr("width", "100%")
+        .attr("height", "100%")
+        .attr("viewBox", [0, 0, networkWidth, networkHeight]);
+    
+    if (networkSimulation) {
+        networkSimulation
+            .force("center", d3.forceCenter(networkWidth / 2, networkHeight / 2))
+            .alpha(0.3)
+            .restart();
+    }
+}
+
+// 监听搜索容器大小变化
+const resizeObserver = new ResizeObserver(entries => {
+    for (let entry of entries) {
+        if (entry.target.id === 'search-container') {
+            updateNetworkSize();
+        }
+    }
+});
+
+resizeObserver.observe(document.getElementById('search-container'));
+
+// 节点类型名称转换
+function getNodeTypeName(type) {
+    switch(type) {
+        case 'topic_main': return '主题节点';
+        case 'text': return '文本节点';
+        case 'reply': return '回复节点';
+        case 're_reply': return '再回复节点';
+        default: return '未知类型';
+    }
+}
+
+// 获取节点半径
+function getNodeRadius(node) {
+    switch(node.type) {
+        case "topic_main": return 15;
+        case "text": return 8;
+        case "reply": return 5;
+        case "re_reply": return 3;
+        default: return 5;
+    }
+}
+
+// 获取节点颜色 - 根据情感状态
+function getNodeColor(node) {
+    if (node.type === "topic_main") {
+        return virusColors[node.type] || '#999';
+    }
+    
+    // 根据情感返回不同颜色
+    if (node.sentiment && sentimentColors[node.sentiment]) {
+        return sentimentColors[node.sentiment];
+    }
+    
+    return virusColors[node.type] || '#999';
+}
+
+// 获取情感分析的文本表示
+function getSentimentText(sentiment) {
+    switch(sentiment) {
+        case 'positive': return '积极';
+        case 'neutral': return '中性';
+        case 'negative': return '消极';
+        default: return '未知';
+    }
+}
+
+// 获取情感分数的文本颜色类
+function getSentimentColorClass(sentiment) {
+    switch(sentiment) {
+        case 'positive': return 'sentiment-positive';
+        case 'neutral': return 'sentiment-neutral';
+        case 'negative': return 'sentiment-negative';
+        default: return '';
+    }
+}
+
+// 搜索功能
+function performSearch() {
+    const keywords = searchInput.value.trim().toLowerCase().split(/\s+/);
+    if (keywords.length === 0 || (keywords.length === 1 && keywords[0] === '')) {
+        resetSearch();
+        return;
+    }
+
+    searchResults = originalData.nodes.filter(node => {
+        if (!node.text) return false;
+        return keywords.some(keyword => 
+            node.text.toLowerCase().includes(keyword)
+        );
+    });
+
+    searchStats.textContent = `找到 ${searchResults.length} 个匹配结果`;
+    displaySearchResults(searchResults, keywords);
+    highlightSearchResults(searchResults);
+}
+
+// 显示搜索结果
+function displaySearchResults(results, keywords) {
+    searchResultsContainer.innerHTML = '';
+    
+    results.forEach(node => {
+        const resultItem = document.createElement('div');
+        resultItem.className = 'result-item';
+        
+        const typeDiv = document.createElement('div');
+        typeDiv.className = 'result-type';
+        typeDiv.textContent = getNodeTypeName(node.type);
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'result-content';
+        
+        let content = node.text;
+        keywords.forEach(keyword => {
+            const regex = new RegExp(keyword, 'gi');
+            content = content.replace(regex, match => 
+                `<span class="highlight">${match}</span>`
+            );
+        });
+        
+        contentDiv.innerHTML = content;
+        
+        // 添加情感分析标记
+        if (node.sentiment) {
+            const sentimentDiv = document.createElement('div');
+            sentimentDiv.className = 'result-sentiment';
+            sentimentDiv.innerHTML = `<span class="${getSentimentColorClass(node.sentiment)}">情感: ${getSentimentText(node.sentiment)} (${node.sentiment_score ? node.sentiment_score.toFixed(2) : "N/A"})</span>`;
+            resultItem.appendChild(sentimentDiv);
+        }
+        
+        resultItem.appendChild(typeDiv);
+        resultItem.appendChild(contentDiv);
+        
+        resultItem.addEventListener('click', () => {
+            focusOnNode(node);
+        });
+        
+        searchResultsContainer.appendChild(resultItem);
+    });
+}
+
+// 高亮搜索结果
+function highlightSearchResults(results) {
+    const resultIds = new Set(results.map(node => node.id));
+    
+    networkSvg.selectAll(".node")
+        .style("opacity", d => resultIds.has(d.id) ? 1 : 0.1)
+        .style("stroke", d => resultIds.has(d.id) ? "#ff0000" : null)
+        .style("stroke-width", d => resultIds.has(d.id) ? 2 : 0);
+    
+    networkSvg.selectAll(".link")
+        .style("opacity", d => {
+            const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+            const targetId = typeof d.target === 'object' ? d.target.id : d.target;
+            return resultIds.has(sourceId) && resultIds.has(targetId) ? 0.8 : 0.1;
+        })
+        .style("stroke", d => {
+            const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+            const targetId = typeof d.target === 'object' ? d.target.id : d.target;
+            return resultIds.has(sourceId) && resultIds.has(targetId) ? "#ff0000" : "#ccc";
+        });
+}
+
+// 重置高亮
+function resetHighlight() {
+    networkSvg.selectAll(".node")
+        .style("opacity", 1)
+        .style("stroke", null)
+        .style("stroke-width", 0)
+        .style("fill", d => getNodeColor(d));
+    
+    networkSvg.selectAll(".link")
+        .style("opacity", 0.6)
+        .style("stroke", "#ccc")
+        .style("stroke-width", 1);
+    
+    selectedNode = null; // 清空选中节点
+}
+
+// 重置搜索
+function resetSearch() {
+    searchResults = null;
+    searchStats.textContent = '';
+    searchResultsContainer.innerHTML = '';
+    resetHighlight();
+}
+
+// 渲染网络图
+function renderNetwork(data) {
+    networkSvg.selectAll("*").remove();
+    
+    const simulation = d3.forceSimulation(data.nodes)
+        .force("link", d3.forceLink(data.links)
+            .id(d => d.id)
+            .distance(80)
+            .strength(0.5)
+        )
+        .force("charge", d3.forceManyBody()
+            .strength(-300)
+            .distanceMax(300)
+        )
+        .force("center", d3.forceCenter(networkWidth / 2, networkHeight / 2))
+        .force("collide", d3.forceCollide()
+            .radius(d => getNodeRadius(d) * 2)
+            .strength(0.8)
+        )
+        .velocityDecay(0.6);
+    
+    const link = networkSvg.append("g")
+        .selectAll("line")
+        .data(data.links)
+        .enter().append("line")
+        .attr("class", "link");
+    
+    const node = networkSvg.append("g")
+        .selectAll("circle")
+        .data(data.nodes)
+        .enter().append("circle")
+        .attr("class", "node")
+        .attr("r", getNodeRadius)
+        .attr("fill", getNodeColor)
+        .on("mouseover", handleNodeMouseOver)
+        .on("mouseout", handleNodeMouseOut)
+        .on("click", handleNodeClick)
+        .call(d3.drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended));
+    
+    simulation.on("tick", () => {
+        link
+            .attr("x1", d => d.source.x)
+            .attr("y1", d => d.source.y)
+            .attr("x2", d => d.target.x)
+            .attr("y2", d => d.target.y);
+        
+        node
+            .attr("cx", d => d.x)
+            .attr("cy", d => d.y);
+    });
+    
+    networkSimulation = simulation;
+
+    function handleNodeMouseOver(event, d) {
+        let tooltipContent = `
+            <strong>节点类型:</strong> ${getNodeTypeName(d.type)}<br>
+            <strong>节点ID:</strong> ${d.id}<br>`;
+            
+        if (d.text) {
+            tooltipContent += `<strong>内容:</strong> ${d.text}<br>`; // 显示完整内容
+        }
+        
+        if (d.topic !== undefined) {
+            tooltipContent += `<strong>所属主题:</strong> ${d.topic}<br>`;
+        }
+        
+        // 添加情感分析信息
+        if (d.sentiment) {
+            const sentimentClass = getSentimentColorClass(d.sentiment);
+            tooltipContent += `<strong>情感分析:</strong> <span class="${sentimentClass}">${getSentimentText(d.sentiment)}</span><br>`;
+            if (d.sentiment_score !== undefined) {
+                tooltipContent += `<strong>情感分数:</strong> <span class="${sentimentClass}">${d.sentiment_score.toFixed(3)}</span><br>`;
+            }
+        }
+        
+        if (d.degree) {
+            tooltipContent += `<strong>度中心性:</strong> ${d.degree.toFixed(3)}<br>`;
+        }
+        if (d.betweenness) {
+            tooltipContent += `<strong>介数中心性:</strong> ${d.betweenness.toFixed(3)}<br>`;
+        }
+        if (d.closeness) {
+            tooltipContent += `<strong>接近中心性:</strong> ${d.closeness.toFixed(3)}<br>`;
+        }
+        
+        tooltip.html(tooltipContent)
+        .style("left", (event.pageX + 15) + "px")
+        .style("top", (event.pageY - 28) + "px")
+        .style("opacity", 0.9);
+    }
+    
+    function handleNodeMouseOut() {
+        tooltip.style("opacity", 0);
+    }
+    
+    function handleNodeClick(event, d) {
+        // 停止模拟
+        networkSimulation.stop();
+
+        if (selectedNode === d) {
+            // 再次点击同一节点，重置显示
+            selectedNode = null;
+            resetHighlight();
+            return;
+        }
+
+        selectedNode = d;
+
+        // 获取相关联的节点
+        const connectedLinks = filteredData.links.filter(l => {
+            const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+            const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+            return sourceId === d.id || targetId === d.id;
+        });
+
+        const connectedNodeIds = new Set();
+        connectedLinks.forEach(l => {
+            const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+            const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+            connectedNodeIds.add(sourceId);
+            connectedNodeIds.add(targetId);
+        });
+
+        // 高亮显示
+        networkSvg.selectAll(".node")
+            .style("opacity", n => connectedNodeIds.has(n.id) ? 1 : 0.1)
+            .style("stroke", n => n.id === d.id ? "#ff0000" : (connectedNodeIds.has(n.id) ? "#ff0000" : null))
+            .style("stroke-width", n => n.id === d.id ? 3 : (connectedNodeIds.has(n.id) ? 2 : 0));
+
+        networkSvg.selectAll(".link")
+            .style("opacity", l => {
+                const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+                const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+                return (sourceId === d.id || targetId === d.id) ? 1 : 0.1;
+            })
+            .style("stroke", l => {
+                const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+                const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+                return (sourceId === d.id || targetId === d.id) ? "#ff0000" : "#ccc";
+            })
+            .style("stroke-width", l => {
+                const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+                const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+                return (sourceId === d.id || targetId === d.id) ? 2 : 1;
+            });
+    }
+    
+    function dragstarted(event) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        event.subject.fx = event.subject.x;
+        event.subject.fy = event.subject.y;
+    }
+    
+    function dragged(event) {
+        event.subject.fx = event.x;
+        event.subject.fy = event.y;
+    }
+    
+    function dragended(event) {
+        if (!event.active) simulation.alphaTarget(0);
+        // 保持节点位置固定
+        event.subject.fx = event.x;
+        event.subject.fy = event.y;
+    }
+}
+
+// 初始化过滤器
+function initFilterUI(data) {
+    const topicFilterContainer = document.getElementById("topic-filters");
+    const topicNodes = data.nodes
+        .filter(node => node.type === "topic_main")
+        .sort((a, b) => String(a.topic).localeCompare(String(b.topic)));
+    
+    topicFilterContainer.innerHTML = '';
+    
+    topicNodes.forEach(topicNode => {
+        const filterOption = document.createElement('div');
+        filterOption.className = 'filter-option';
+        
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `topic-${topicNode.topic}`;
+        checkbox.checked = true;
+        checkbox.setAttribute('data-topic', topicNode.topic);
+        
+        const label = document.createElement('label');
+        label.htmlFor = `topic-${topicNode.topic}`;
+        label.innerHTML = `<span style="color:${virusColors.topic_main}">主题${topicNode.topic}</span>`;
+        
+        filterOption.appendChild(checkbox);
+        filterOption.appendChild(label);
+        topicFilterContainer.appendChild(filterOption);
+    });
+    
+    document.getElementById('select-all-topics').addEventListener('change', function() {
+        document.querySelectorAll('#topic-filters input[type="checkbox"]')
+            .forEach(checkbox => checkbox.checked = this.checked);
+    });
+}
+
+// 应用过滤器
+function applyFilters() {
+    const selectedTopics = Array.from(
+        document.querySelectorAll('#topic-filters input[type="checkbox"]:checked')
+    ).map(checkbox => checkbox.getAttribute('data-topic'));
+    
+    const selectedTypes = [];
+    if (document.getElementById('node-type-topic').checked) selectedTypes.push('topic_main');
+    if (document.getElementById('node-type-text').checked) selectedTypes.push('text');
+    if (document.getElementById('node-type-reply').checked) selectedTypes.push('reply');
+    if (document.getElementById('node-type-re_reply').checked) selectedTypes.push('re_reply');
+    
+    // 获取情感筛选
+    const selectedSentiments = [];
+    if (document.getElementById('sentiment-positive').checked) selectedSentiments.push('positive');
+    if (document.getElementById('sentiment-neutral').checked) selectedSentiments.push('neutral');
+    if (document.getElementById('sentiment-negative').checked) selectedSentiments.push('negative');
+    
+    // 调试信息
+    console.log("Selected Topics:", selectedTopics);
+    console.log("Selected Types:", selectedTypes);
+    console.log("Selected Sentiments:", selectedSentiments);
+    
+    filteredData = {
+        nodes: originalData.nodes.filter(node => {
+            // 检查节点是否满足主题和类型条件
+            const passesTypeAndTopic = selectedTypes.includes(node.type) && 
+                                      (node.topic !== undefined ? selectedTopics.includes(String(node.topic)) : true);
+            
+            // 如果不满足基本条件，直接排除
+            if (!passesTypeAndTopic) return false;
+            
+            // 主题节点总是保留（如果已经通过类型和主题筛选）
+            if (node.type === 'topic_main') return true;
+            
+            // 没有情感属性的节点默认保留
+            if (node.sentiment === undefined || node.sentiment === null) return true;
+            
+            // 检查情感条件
+            return selectedSentiments.includes(node.sentiment);
+        })
+    };
+    
+    console.log("Filtered nodes count:", filteredData.nodes.length);
+    
+    // 确保保留有效的链接
+    const validNodeIds = new Set(filteredData.nodes.map(node => node.id));
+    filteredData.links = originalData.links.filter(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        return validNodeIds.has(sourceId) && validNodeIds.has(targetId);
+    });
+    
+    console.log("Filtered links count:", filteredData.links.length);
+    
+    renderNetwork(filteredData);
+}
+
+// 重置过滤器
+function resetFilters() {
+    document.getElementById('select-all-topics').checked = true;
+    document.querySelectorAll('#topic-filters input[type="checkbox"]')
+        .forEach(checkbox => checkbox.checked = true);
+    
+    document.getElementById('node-type-topic').checked = true;
+    document.getElementById('node-type-text').checked = true;
+    document.getElementById('node-type-reply').checked = true;
+    document.getElementById('node-type-re_reply').checked = true;
+    
+    document.getElementById('sentiment-positive').checked = true;
+    document.getElementById('sentiment-neutral').checked = true;
+    document.getElementById('sentiment-negative').checked = true;
+    
+    filteredData = originalData; // 不深拷贝，直接使用原始引用
+    renderNetwork(filteredData);
+}
+
+// 事件监听器
+searchButton.addEventListener('click', performSearch);
+searchInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        performSearch();
+    }
+});
+
+document.getElementById('apply-filters').addEventListener('click', applyFilters);
+document.getElementById('reset-filters').addEventListener('click', resetFilters);
+
+window.addEventListener('resize', updateNetworkSize);
+
+// 初始化可视化
+d3.json("network_data_2.json").then(data => {
+    originalData = data; // 不深拷贝，直接使用原始引用
+    filteredData = data; // 不深拷贝，直接使用原始引用
+    initFilterUI(data);
+    renderNetwork(data);
+}).catch(error => {
+    console.error("数据加载出错:", error);
+});
+
+function focusOnNode(node) {
+    // 触发与节点点击相同的行为
+    handleNodeClick(null, node);
+}
+    </script>
+</body>
+</html>
