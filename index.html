@@ -105,11 +105,17 @@
             border-radius: 4px;
             cursor: pointer;
             transition: all 0.2s;
+            border-left: 4px solid transparent;
         }
 
         .result-item:hover {
             background-color: #f0f0f0;
             border-color: #36B5B0;
+        }
+        
+        .active-result {
+            border-left: 4px solid #FF4500 !important;
+            background-color: #FFFACD !important;
         }
 
         .result-type {
@@ -352,6 +358,7 @@ let filteredData = null;
 let networkSimulation = null;
 let searchResults = null;
 let selectedNode = null; // 当前选中的节点
+let networkZoom = null; // 添加缩放控制变量
 
 // 病毒研究配色方案
 const virusColors = {
@@ -367,7 +374,6 @@ const sentimentColors = {
     neutral: '#607D8B',
     negative: '#F44336'
 };
-
 // 获取DOM元素
 const searchInput = document.querySelector('.search-input');
 const searchButton = document.querySelector('.search-button');
@@ -386,6 +392,15 @@ networkSvg
     .attr("width", "100%")
     .attr("height", "100%")
     .attr("viewBox", [0, 0, networkWidth, networkHeight]);
+
+// 初始化缩放行为
+networkZoom = d3.zoom()
+    .scaleExtent([0.1, 10])
+    .on("zoom", (event) => {
+        networkSvg.selectAll("g").attr("transform", event.transform);
+    });
+
+networkSvg.call(networkZoom);
 
 // 搜索区域伸缩控制
 collapseButton.addEventListener('click', () => {
@@ -536,7 +551,13 @@ function displaySearchResults(results, keywords) {
         resultItem.appendChild(contentDiv);
         
         resultItem.addEventListener('click', () => {
+            // 高亮突出显示该节点
             focusOnNode(node);
+            
+            // 添加类以表示当前选中项
+            document.querySelectorAll('.result-item').forEach(item => 
+                item.classList.remove('active-result'));
+            resultItem.classList.add('active-result');
         });
         
         searchResultsContainer.appendChild(resultItem);
@@ -869,6 +890,52 @@ function resetFilters() {
     renderNetwork(filteredData);
 }
 
+// 完善focusOnNode函数实现搜索结果高亮定位
+function focusOnNode(node) {
+    // 先重置所有节点到搜索状态
+    if (searchResults) {
+        highlightSearchResults(searchResults);
+    }
+    
+    // 找到对应的SVG节点并应用特殊效果
+    networkSvg.selectAll(".node")
+        .filter(d => d.id === node.id)
+        .raise() // 将节点提升到顶层
+        .transition()
+        .duration(300)
+        .attr("r", d => getNodeRadius(d) * 1.5) // 放大节点
+        .style("fill", "#FFFF00") // 黄色荧光
+        .style("stroke", "#FF4500") // 醒目的轮廓
+        .style("stroke-width", 3)
+        .style("opacity", 1); // 确保完全不透明
+    
+    // 自动将视图中心定位到该节点
+    if (networkSimulation && node.x && node.y) {
+        // 停止模拟以固定位置
+        networkSimulation.stop();
+        
+        // 计算缩放和平移的值
+        const scale = 2; // 放大倍数
+        const transform = d3.zoomIdentity
+            .translate(networkWidth/2 - node.x*scale, networkHeight/2 - node.y*scale)
+            .scale(scale);
+            
+        // 应用变换
+        networkSvg.transition()
+            .duration(750)
+            .call(networkZoom.transform, transform);
+    }
+    
+    // 3秒后恢复正常大小但保持高亮色
+    setTimeout(() => {
+        networkSvg.selectAll(".node")
+            .filter(d => d.id === node.id)
+            .transition()
+            .duration(300)
+            .attr("r", d => getNodeRadius(d));
+    }, 3000);
+}
+
 // 事件监听器
 searchButton.addEventListener('click', performSearch);
 searchInput.addEventListener('keypress', (e) => {
@@ -883,7 +950,7 @@ document.getElementById('reset-filters').addEventListener('click', resetFilters)
 window.addEventListener('resize', updateNetworkSize);
 
 // 初始化可视化
-d3.json("network_data_2.json").then(data => {
+d3.json("network_data_0.json").then(data => {
     originalData = data; // 不深拷贝，直接使用原始引用
     filteredData = data; // 不深拷贝，直接使用原始引用
     initFilterUI(data);
@@ -891,11 +958,6 @@ d3.json("network_data_2.json").then(data => {
 }).catch(error => {
     console.error("数据加载出错:", error);
 });
-
-function focusOnNode(node) {
-    // 触发与节点点击相同的行为
-    handleNodeClick(null, node);
-}
     </script>
 </body>
 </html>
